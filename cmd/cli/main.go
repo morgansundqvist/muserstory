@@ -29,11 +29,9 @@ func printUsage() {
 }
 
 func main() {
-	// Define the -f flag for the markdown file path.
-	// It's crucial this is parsed before accessing flag.Args().
 	filePath := flag.String("f", "userstories.md", "Path to the markdown file containing user stories.")
-	flag.Usage = printUsage // Set custom usage function
-	flag.Parse()            // Parse all flags
+	flag.Usage = printUsage 
+	flag.Parse()            
 
 	if *filePath == "" {
 		fmt.Fprintln(os.Stderr, "Error: Markdown file path (-f) must be provided.")
@@ -41,12 +39,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize adapters and services.
-	// We use the mock OpenAILLMService here.
 	llmAPIService := adapters.NewOpenAILLMService()
 	storyService := application.NewUserStoryService(llmAPIService, *filePath)
 
-	// Get non-flag arguments (the command and its parameters).
 	args := flag.Args()
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: No command provided.")
@@ -77,7 +72,6 @@ func main() {
 			printUsage()
 			os.Exit(1)
 		}
-		// The story description is all arguments after "add"
 		storyDescription := strings.Join(args[1:], " ")
 		fmt.Printf("Adding story to %s: \"%s\"\n", *filePath, storyDescription)
 		err := storyService.AddUserStory(storyDescription)
@@ -85,7 +79,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error adding user story: %v\n", err)
 			os.Exit(1)
 		}
-		// Success message is printed by the service method.
 
 	case "list":
 		if len(args) != 1 {
@@ -112,22 +105,18 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error during summarization: %v\n", err)
 			os.Exit(1)
 		}
-		// Success message is printed by the service method.
 
 	case "generate":
 		generateCmd := flag.NewFlagSet("generate", flag.ExitOnError)
 		numStories := generateCmd.Int("n", 1, "Number of user stories to generate")
 
-		// Custom usage for generate subcommand
 		generateCmd.Usage = func() {
 			fmt.Fprintf(os.Stderr, "Usage: %s -f <file> generate -n <number_of_stories>\n", os.Args[0])
 			fmt.Fprintln(os.Stderr, "\nFlags for generate:")
 			generateCmd.PrintDefaults()
 		}
 
-		// Parse flags for the generate command (args[0] is "generate")
 		if err := generateCmd.Parse(args[1:]); err != nil {
-			// Parse will exit on error due to flag.ExitOnError, but good practice
 			fmt.Fprintf(os.Stderr, "Error parsing flags for 'generate' command: %v\n", err)
 			os.Exit(1)
 		}
@@ -138,7 +127,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Check if there are any non-flag arguments remaining after parsing -n
 		if len(generateCmd.Args()) > 0 {
 			fmt.Fprintf(os.Stderr, "Error: 'generate' command received unexpected arguments: %v\n", generateCmd.Args())
 			generateCmd.Usage()
@@ -151,7 +139,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error during story generation: %v\n", err)
 			os.Exit(1)
 		}
-		// Success message is printed by the service method.
 
 	default:
 		fmt.Fprintf(os.Stderr, "Error: Unknown command '%s'\n", command)

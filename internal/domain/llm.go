@@ -4,7 +4,6 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-// ModelType defines the available LLM model types.
 type ModelType string
 
 const (
@@ -30,8 +29,6 @@ type LLMAdvancedInput struct {
 }
 
 func GenerateSchema[T any]() interface{} {
-	// Structured Outputs uses a subset of JSON schema
-	// These flags are necessary to comply with the subset
 	reflector := jsonschema.Reflector{
 		AllowAdditionalProperties: false,
 		DoNotReference:            true,

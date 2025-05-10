@@ -9,41 +9,33 @@ import (
 	"github.com/openai/openai-go"
 )
 
-// OpenAILLMService is a mock implementation of the LLMService.
-// In a real application, this would interact with an LLM API (e.g., OpenAI).
 type OpenAILLMService struct {
-	// APIKey string // You would store your API key here in a real implementation
 }
 
-// NewOpenAILLMService creates a new instance of the mock OpenAILLMService.
 func NewOpenAILLMService() *OpenAILLMService {
 	return &OpenAILLMService{}
 }
 
-// CategorizeStory provides a mock categorization for a single story.
 func (s *OpenAILLMService) CategorizeStory(storyText string) (string, error) {
 	fmt.Printf("MockLLMService: Attempting to categorize story: \"%s\"\n", storyText)
-	// Simple mock logic:
 	if strings.Contains(strings.ToLower(storyText), "bug") || strings.Contains(strings.ToLower(storyText), "fix") {
 		return "Bug", nil
 	}
 	if strings.Contains(strings.ToLower(storyText), "feature") || strings.Contains(strings.ToLower(storyText), "i want") {
 		return "Feature", nil
 	}
-	if len(storyText)%3 == 0 { // Arbitrary logic for variety
+	if len(storyText)%3 == 0 { 
 		return "Chore", nil
 	}
-	return "Technical Debt", nil // Default mock category
+	return "Technical Debt", nil 
 }
 
-// CategorizeStories provides mock categorization for a list of stories.
 func (s *OpenAILLMService) CategorizeStories(stories []domain.UserStory) ([]domain.UserStory, error) {
 	fmt.Printf("MockLLMService: Attempting to categorize %d stories.\n", len(stories))
 	updatedStories := make([]domain.UserStory, len(stories))
 	for i, story := range stories {
 		category, err := s.CategorizeStory(story.Description)
 		if err != nil {
-			// For this mock, we'll log and assign a default, but a real service might handle errors differently.
 			fmt.Printf("Error categorizing story ID %s ('%s'): %v. Assigning 'Uncategorized'.\n", story.ID, story.Description, err)
 			updatedStories[i] = story
 			updatedStories[i].Category = "Uncategorized"
@@ -118,7 +110,6 @@ func (s *OpenAILLMService) AskAdvanced(input domain.LLMAdvancedInput) (string, e
 				JSONSchema: schemaParam,
 			},
 		},
-		// only certain models can perform structured outputs
 		Model: model,
 	})
 

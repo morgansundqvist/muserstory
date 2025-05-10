@@ -7,20 +7,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort" // Added import for sorting category names
+	"sort" 
 	"strings"
 
 	"github.com/morgansundqvist/muserstory/internal/domain"
 	"github.com/morgansundqvist/muserstory/internal/ports"
 )
 
-// UserStoryService provides methods to manage user stories.
 type UserStoryService struct {
 	llmService ports.LLMService
 	filePath   string
 }
 
-// NewUserStoryService creates a new UserStoryService.
 func NewUserStoryService(llmService ports.LLMService, filePath string) *UserStoryService {
 	return &UserStoryService{
 		llmService: llmService,
@@ -28,25 +26,19 @@ func NewUserStoryService(llmService ports.LLMService, filePath string) *UserStor
 	}
 }
 
-// generateID creates a simple unique ID for new stories.
 func generateID() string {
-	bytes := make([]byte, 8) // Creates a 16-character hex string
+	bytes := make([]byte, 8) 
 	if _, err := rand.Read(bytes); err != nil {
-		// Fallback for extremely rare error case
 		return fmt.Sprintf("errID-%d", os.Getpid())
 	}
 	return hex.EncodeToString(bytes)
 }
 
-// ReadUserStoriesFromFile reads a potential summary and user stories from the file.
-// The summary is expected at the top, starting with "# Summary" on its own line,
-// followed by the summary content. The summary ends before the first story item ("- ")
-// or category header ("**").
 func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory, error) {
 	file, err := os.Open(s.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", []domain.UserStory{}, nil // No file, so no summary and no stories
+			return "", []domain.UserStory{}, nil 
 		}
 		return "", nil, fmt.Errorf("error opening file %s: %w", s.filePath, err)
 	}
@@ -54,7 +46,7 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory
 
 	var stories []domain.UserStory
 	var summaryBuilder strings.Builder
-	var storyContentLines []string // Lines that are not part of the summary
+	var storyContentLines []string 
 
 	scanner := bufio.NewScanner(file)
 
@@ -71,7 +63,7 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory
 
 	if len(allFileLines) > 0 && strings.TrimSpace(allFileLines[0]) == "# Summary" {
 		isReadingSummary = true
-		currentLineIndex = 1 // Start processing from the line after "# Summary"
+		currentLineIndex = 1 
 	}
 
 	for ; currentLineIndex < len(allFileLines); currentLineIndex++ {
@@ -79,32 +71,28 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory
 		trimmedLine := strings.TrimSpace(line)
 
 		if isReadingSummary {
-			// Check if the current line marks the end of the summary
 			if strings.HasPrefix(trimmedLine, "- ") || strings.HasPrefix(trimmedLine, "**") {
-				isReadingSummary = false                            // Summary section ended
-				storyContentLines = append(storyContentLines, line) // This line is the start of stories
+				isReadingSummary = false                            
+				storyContentLines = append(storyContentLines, line) 
 			} else {
-				// This line is part of the summary content
 				if summaryBuilder.Len() > 0 {
-					summaryBuilder.WriteString("\n") // Add newline separator for multi-line summaries
+					summaryBuilder.WriteString("\n") 
 				}
 				summaryBuilder.WriteString(line)
 			}
 		} else {
-			// Not in summary mode (either never started or already ended)
 			storyContentLines = append(storyContentLines, line)
 		}
 	}
 
-	// Now parse the storyContentLines
-	lineNumber := 0 // Line number relative to the start of story content
+	lineNumber := 0 
 	for _, line := range storyContentLines {
 		lineNumber++
 		trimmedLine := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmedLine, "- ") {
 			content := strings.TrimPrefix(trimmedLine, "- ")
 			description := content
-			category := "Uncategorized" // Default
+			category := "Uncategorized" 
 
 			catStartIndex := strings.LastIndex(content, "[Category: ")
 			catEndIndex := strings.LastIndex(content, "]")
@@ -115,7 +103,7 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory
 			}
 
 			stories = append(stories, domain.UserStory{
-				ID:          fmt.Sprintf("%s-%d", generateID(), lineNumber), // ID generation remains non-persistent
+				ID:          fmt.Sprintf("%s-%d", generateID(), lineNumber), 
 				Description: description,
 				Category:    category,
 			})
@@ -126,8 +114,6 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory
 	return finalSummary, stories, nil
 }
 
-// WriteUserStoriesToFile writes the given summary and user stories to the markdown file,
-// overwriting its current content. Summary is written first, then stories grouped by category.
 func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []domain.UserStory) error {
 	file, err := os.OpenFile(s.filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
@@ -147,13 +133,12 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 				return fmt.Errorf("error writing summary content: %w", err)
 			}
 		}
-		if _, err := writer.WriteString("\n"); err != nil { // Extra blank line after summary section
+		if _, err := writer.WriteString("\n"); err != nil { 
 			return fmt.Errorf("error writing newline after summary section: %w", err)
 		}
 	}
 
 	if len(stories) == 0 {
-		// If there are no stories, ensure the file is empty and return.
 		return writer.Flush()
 	}
 
@@ -166,12 +151,11 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 			catToUse = "Uncategorized"
 		}
 		if _, exists := storiesByCategory[catToUse]; !exists {
-			categoryOrder = append(categoryOrder, catToUse) // Keep track of categories in order of appearance or sort later
+			categoryOrder = append(categoryOrder, catToUse) 
 		}
 		storiesByCategory[catToUse] = append(storiesByCategory[catToUse], story)
 	}
 
-	// Sort categories alphabetically for consistent output
 	sort.Strings(categoryOrder)
 
 	for _, categoryName := range categoryOrder {
@@ -181,8 +165,6 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 
 		categoryStories := storiesByCategory[categoryName]
 		for _, story := range categoryStories {
-			// Ensure category in the tag matches the group, or use story.Category if it's more specific
-			// For simplicity, we'll use story.Category which should be consistent with categoryName here.
 			catToPrintInTag := story.Category
 			if catToPrintInTag == "" {
 				catToPrintInTag = "Uncategorized"
@@ -192,7 +174,7 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 				return fmt.Errorf("error writing story (ID: %s) to file: %w", story.ID, err)
 			}
 		}
-		if _, err := writer.WriteString("\n"); err != nil { // Add a blank line between categories
+		if _, err := writer.WriteString("\n"); err != nil { 
 			return fmt.Errorf("error writing newline separator: %w", err)
 		}
 	}
@@ -200,7 +182,6 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 	return writer.Flush()
 }
 
-// AddUserStory adds a new user story, auto-categorizes it, and saves it to the file.
 func (s *UserStoryService) AddUserStory(description string) error {
 	currentSummary, stories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
@@ -210,7 +191,7 @@ func (s *UserStoryService) AddUserStory(description string) error {
 	newStory := domain.UserStory{
 		ID:          generateID(),
 		Description: description,
-		Category:    "Uncategorized", // Initial category before LLM call
+		Category:    "Uncategorized", 
 	}
 
 	llmInput := domain.LLMSimpleInput{
@@ -221,13 +202,12 @@ func (s *UserStoryService) AddUserStory(description string) error {
 
 	category, err := s.llmService.AskSimple(llmInput)
 
-	// Attempt to categorize the new story using the LLM service
 	if err != nil {
 		return fmt.Errorf("could not categorize new story: %w", err)
 	}
 	category = strings.TrimSpace(category)
 	if category == "" {
-		category = "Uncategorized" // Fallback if LLM returns an empty category
+		category = "Uncategorized" 
 	}
 
 	newStory.Category = category
@@ -242,8 +222,6 @@ func (s *UserStoryService) AddUserStory(description string) error {
 	return nil
 }
 
-// CategorizeAllStories reads all stories, re-categorizes them using the LLM service,
-// and writes them back to the file.
 func (s *UserStoryService) CategorizeAllStories() error {
 	currentSummary, stories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
@@ -252,7 +230,6 @@ func (s *UserStoryService) CategorizeAllStories() error {
 
 	if len(stories) == 0 {
 		fmt.Println("No stories found in the file to categorize.")
-		// Preserve existing summary even if there are no stories
 		err = s.WriteUserStoriesToFile(currentSummary, []domain.UserStory{})
 		if err != nil {
 			return fmt.Errorf("could not write file with current summary and no stories: %w", err)
@@ -280,25 +257,18 @@ func (s *UserStoryService) CategorizeAllStories() error {
 		}
 		category = strings.TrimSpace(category)
 		if category == "" {
-			category = "Uncategorized" // Fallback if LLM returns an empty category
+			category = "Uncategorized" 
 		}
 		categorizedStories[i] = story
 		categorizedStories[i].Category = category
 	}
 
-	// Sort categorized stories by their category for better organization
 	sort.Slice(categorizedStories, func(i, j int) bool {
 		return categorizedStories[i].Category < categorizedStories[j].Category
 	})
 
-	// Write the categorized stories back to the file
-	// If the categorization fails for some stories, we still want to write the ones that were successfully categorized.
-	// This is a change from the previous version where we would only write if all stories were categorized.
-	// This allows for partial success in categorization.
-	// If no stories were categorized, we still want to write an empty file.
-	// This is a change from the previous version where we would only write if all stories were categorized.
 
-	err = s.WriteUserStoriesToFile(currentSummary, categorizedStories) // Write the (potentially partially) categorized stories along with the original summary
+	err = s.WriteUserStoriesToFile(currentSummary, categorizedStories) 
 	if err != nil {
 		return fmt.Errorf("could not write categorized stories to file: %w", err)
 	}
@@ -315,9 +285,7 @@ func (s *UserStoryService) CategorizeAllStories() error {
 	return nil
 }
 
-// SummarizeStories generates a summary of all user stories and writes it to the file and console.
 func (s *UserStoryService) SummarizeStories() error {
-	// Read existing stories. The current summary is ignored as we're generating a new one.
 	_, stories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read stories for summarization: %w", err)
@@ -325,8 +293,6 @@ func (s *UserStoryService) SummarizeStories() error {
 
 	if len(stories) == 0 {
 		fmt.Println("No stories to summarize.")
-		// If there are no stories, write an empty summary and empty stories list
-		// to ensure the file reflects the "no stories" state, clearing any old summary.
 		err = s.WriteUserStoriesToFile("", []domain.UserStory{})
 		if err != nil {
 			return fmt.Errorf("could not clear file when no stories to summarize: %w", err)
@@ -338,7 +304,6 @@ func (s *UserStoryService) SummarizeStories() error {
 	for i, story := range stories {
 		storyDescriptions.WriteString(story.Description)
 		if i < len(stories)-1 {
-			// Separate descriptions for the LLM; double newline might help context separation.
 			storyDescriptions.WriteString("\n\n")
 		}
 	}
@@ -373,7 +338,6 @@ func (s *UserStoryService) SummarizeStories() error {
 	return nil
 }
 
-// ListUserStories reads all user stories from the file and prints them to the console.
 func (s *UserStoryService) ListUserStories() error {
 	summary, stories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
@@ -383,15 +347,13 @@ func (s *UserStoryService) ListUserStories() error {
 	if summary != "" {
 		fmt.Println("# Summary")
 		fmt.Println(summary)
-		fmt.Println() // Add a blank line for separation before stories
+		fmt.Println() 
 	}
 
 	if len(stories) == 0 {
-		if summary == "" { // Only print "No user stories" if there was no summary either
+		if summary == "" { 
 			fmt.Println("No user stories found in the file.")
 		} else {
-			// If there's a summary, it's already printed.
-			// We can indicate that no stories follow.
 			fmt.Println("No user stories found in the file (summary is present).")
 		}
 		return nil
@@ -404,13 +366,10 @@ func (s *UserStoryService) ListUserStories() error {
 	return nil
 }
 
-// GeneratedStoriesResponse defines the structure for LLM response when generating new stories.
 type GeneratedStoriesResponse struct {
 	NewUserStories []string `json:"new_user_stories" jsonschema_description:"A list of new user story descriptions."`
 }
 
-// GenerateNewStories generates a specified number of new user stories based on existing ones,
-// categorizes them, and saves them to the file.
 func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 	currentSummary, existingStories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
@@ -432,7 +391,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 	llmInput := domain.LLMAdvancedInput{
 		SystemMessage:     fmt.Sprintf("Based on the provided context of existing user stories (if any), generate exactly %d new, distinct, and relevant user stories. Each story should be a single descriptive sentence, typically following a format like 'As a [user type], I want [action] so that [benefit]'.", numStoriesToGenerate),
 		UserMessage:       existingStoryDescriptions.String(),
-		ModelType:         domain.ModelTypeReasoningSimple, // Or consider a more advanced model if available/needed
+		ModelType:         domain.ModelTypeReasoningSimple, 
 		SchemaName:        "GenerateNewUserStories",
 		Schema:            schemaDef,
 		SchemaDescription: "A list of newly generated user story descriptions.",
@@ -480,10 +439,9 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 		newStory := domain.UserStory{
 			ID:          generateID(),
 			Description: trimmedStoryDesc,
-			Category:    "Uncategorized", // Default before categorization
+			Category:    "Uncategorized", 
 		}
 
-		// Categorize the new story
 		categorizationInput := domain.LLMSimpleInput{
 			SystemMessage: "Categorize the following user story. Only return the category name.",
 			UserMessage:   newStory.Description,
@@ -492,7 +450,6 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 		category, catErr := s.llmService.AskSimple(categorizationInput)
 		if catErr != nil {
 			fmt.Printf("Could not categorize new story \"%s\": %v. Assigning 'Uncategorized'.\n", newStory.Description, catErr)
-			// Keep "Uncategorized"
 		} else {
 			trimmedCategory := strings.TrimSpace(category)
 			if trimmedCategory == "" {
@@ -528,7 +485,6 @@ type CategoryResponse struct {
 func (s *UserStoryService) GeneratePossibleCategories(stories []domain.UserStory) []string {
 	var categories []string
 
-	//Concatenate all story descriptions into a single string
 	var storyDescriptions strings.Builder
 	for _, story := range stories {
 		storyDescriptions.WriteString(story.Description)
@@ -537,7 +493,6 @@ func (s *UserStoryService) GeneratePossibleCategories(stories []domain.UserStory
 
 	responseInterface := domain.GenerateSchema[CategoryResponse]()
 
-	// Ask the LLM for possible categories based on the concatenated descriptions
 	llmInput := domain.LLMAdvancedInput{
 		SystemMessage:     "Generate a list of possible categories based on the following user stories. Only return the category names.",
 		UserMessage:       storyDescriptions.String(),
@@ -555,7 +510,6 @@ func (s *UserStoryService) GeneratePossibleCategories(stories []domain.UserStory
 
 	var categoriesResponseStruct CategoryResponse
 
-	// Unmarshal the response into the CategoryResponse struct
 	err = json.Unmarshal([]byte(categoriesResponse), &categoriesResponseStruct)
 	if err != nil {
 		fmt.Printf("Error unmarshalling categories response: %v\n", err)
