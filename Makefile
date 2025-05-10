@@ -1,6 +1,8 @@
 # The main entry point is cmd/cli/main.go
 APP_DIR = ./cmd/cli
-APP_NAME = myapp # You can change this to your desired binary name
+APP_NAME = muserstory
+BIN_DIR = ./bin
+APP_PATH = $(BIN_DIR)/$(APP_NAME) # Full path to the binary
 
 # Default target: build the application
 .PHONY: all
@@ -9,19 +11,21 @@ all: build
 # Build target: compiles the Go application
 .PHONY: build
 build:
-	@echo "Building $(APP_NAME)..."
+	@echo "Building $(APP_NAME) into $(BIN_DIR)..."
+	# Create the bin directory if it doesn't exist
+	mkdir -p $(BIN_DIR)
 	# Use go build to compile the main package
-	# -o specifies the output file name
+	# -o specifies the output file name and path
 	# $(APP_DIR) specifies the directory containing the main package
-	go build -o $(APP_NAME) $(APP_DIR)
+	go build -o $(APP_PATH) $(APP_DIR)
 	@echo "Build complete."
 
 # Run target: builds and runs the application
 .PHONY: run
 run: build
-	@echo "Running $(APP_NAME)..."
+	@echo "Running $(APP_NAME) from $(BIN_DIR)..."
 	# Execute the built binary
-	./$(APP_NAME)
+	./$(APP_PATH)
 
 # Clean target: removes the built binary and any other generated files
 .PHONY: clean
@@ -29,8 +33,8 @@ clean:
 	@echo "Cleaning up build artifacts..."
 	# Use go clean to remove object files and cached files
 	go clean
-	# Remove the built binary
-	rm -f $(APP_NAME)
+	# Remove the built binary directory
+	rm -rf $(BIN_DIR)
 	@echo "Clean complete."
 
 # Test target: runs all tests in the project
@@ -49,6 +53,7 @@ fmt:
 	# Use go fmt to format all Go files
 	go fmt ./...
 	@echo "Formatting complete."
+
 
 # Help target: displays available targets
 .PHONY: help
