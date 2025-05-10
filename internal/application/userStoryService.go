@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort" // Added import for sorting category names
@@ -259,10 +260,14 @@ func (s *UserStoryService) CategorizeAllStories() error {
 		return nil
 	}
 
+	possibleCategories := s.GeneratePossibleCategories(stories)
+
+	possibleCategoriesString := strings.Join(possibleCategories, ", ")
+
 	categorizedStories := make([]domain.UserStory, len(stories))
 	for i, story := range stories {
 		llmInput := domain.LLMSimpleInput{
-			SystemMessage: "Categorize the following user story. Only return the category name.",
+			SystemMessage: "Categorize the following user story. Only return the category name. Possible categories are: " + possibleCategoriesString,
 			UserMessage:   story.Description,
 			ModelType:     domain.ModelTypeSimple,
 		}
@@ -311,8 +316,7 @@ func (s *UserStoryService) CategorizeAllStories() error {
 }
 
 // SummarizeStories generates a summary of all user stories and writes it to the file and console.
-func (s *UserStoryService) 
-SummarizeStories() error {
+func (s *UserStoryService) SummarizeStories() error {
 	// Read existing stories. The current summary is ignored as we're generating a new one.
 	_, stories, err := s.ReadUserStoriesFromFile()
 	if err != nil {
@@ -340,7 +344,7 @@ SummarizeStories() error {
 	}
 
 	llmInput := domain.LLMSimpleInput{
-		SystemMessage: "Provide a concise summary of the following user stories. The summary should be suitable for a project overview, presented as a paragraph or a few bullet points if appropriate. Do not include any preamble like 'Here is the summary:'.",
+		SystemMessage: "Please create a summary of what the project is based on the user stories which are input. Write about what is is based on the user stories but also what it could become. Do not include any preamble like 'Here is the summary:'.",
 		UserMessage:   storyDescriptions.String(),
 		ModelType:     domain.ModelTypeSimple,
 	}
@@ -398,4 +402,50 @@ func (s *UserStoryService) ListUserStories() error {
 		fmt.Printf("- %s [Category: %s]\n", story.Description, story.Category)
 	}
 	return nil
+}
+
+type CategoryResponse struct {
+	Categories []string `json:"categories" jsonschema_description:"List of possible categories for the user stories"`
+}
+
+func (s *UserStoryService) GeneratePossibleCategories(stories []domain.UserStory) []string {
+	var categories []string
+
+	//Concatenate all story descriptions into a single string
+	var storyDescriptions strings.Builder
+	for _, story := range stories {
+		storyDescriptions.WriteString(story.Description)
+		storyDescriptions.WriteString("\n")
+	}
+
+	responseInterface := domain.GenerateSchema[CategoryResponse]()
+
+	// Ask the LLM for possible categories based on the concatenated descriptions
+	llmInput := domain.LLMAdvancedInput{
+		SystemMessage:     "Generate a list of possible categories based on the following user stories. Only return the category names.",
+		UserMessage:       storyDescriptions.String(),
+		ModelType:         domain.ModelTypeSimple,
+		SchemaName:        "GeneratePossibleCategories",
+		Schema:            responseInterface,
+		SchemaDescription: "List of possible categories for the user stories",
+	}
+
+	categoriesResponse, err := s.llmService.AskAdvanced(llmInput)
+	if err != nil {
+		fmt.Printf("Error generating categories: %v\n", err)
+		return nil
+	}
+
+	var categoriesResponseStruct CategoryResponse
+
+	// Unmarshal the response into the CategoryResponse struct
+	err = json.Unmarshal([]byte(categoriesResponse), &categoriesResponseStruct)
+	if err != nil {
+		fmt.Printf("Error unmarshalling categories response: %v\n", err)
+		return nil
+	}
+
+	categories = categoriesResponseStruct.Categories
+
+	return categories
 }
