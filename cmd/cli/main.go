@@ -1,148 +1,131 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/morgansundqvist/muserstory/internal/adapters"
 	"github.com/morgansundqvist/muserstory/internal/application"
+	"github.com/spf13/cobra"
 )
 
-func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s -f <markdown_file_path> <command> [arguments]\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "\nFlags:")
-	flag.PrintDefaults()
-	fmt.Fprintln(os.Stderr, "\nCommands:")
-	fmt.Fprintln(os.Stderr, "  categorize          Categorize all user stories in the file using an LLM service.")
-	fmt.Fprintln(os.Stderr, "  add \"<story>\"     Add a new user story to the file. It will be automatically categorized.")
-	fmt.Fprintln(os.Stderr, "  list                List all user stories from the file.")
-	fmt.Fprintln(os.Stderr, "  summarize           Generate and save a summary of all user stories.")
-	fmt.Fprintln(os.Stderr, "  generate -n <num>   Generate <num> new user stories based on existing ones.")
-	fmt.Fprintln(os.Stderr, "\nExamples:")
-	fmt.Fprintf(os.Stderr, "  %s -f stories.md categorize\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -f stories.md add \"As a user, I want to log in so that I can access my account.\"\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -f stories.md list\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -f stories.md summarize\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -f stories.md generate -n 5\n", os.Args[0])
-}
+type ctxKey string
+
+const svcKey ctxKey = "userStoryService"
 
 func main() {
-	filePath := flag.String("f", "userstories.md", "Path to the markdown file containing user stories.")
-	flag.Usage = printUsage 
-	flag.Parse()            
+	var filePath string
 
-	if *filePath == "" {
-		fmt.Fprintln(os.Stderr, "Error: Markdown file path (-f) must be provided.")
-		printUsage()
-		os.Exit(1)
+	rootCmd := &cobra.Command{
+		Use:   "muserstory",
+		Short: "Manage user stories with LLM support",
+		Long:  "A CLI tool to categorize, add, list, summarize, and generate user stories using an LLM service.",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if filePath == "" {
+				cmd.Println("Error: markdown file path must be provided with --file flag")
+				return fmt.Errorf("missing required flag: --file")
+			}
+			llmAPI := adapters.NewOpenAILLMService()
+			svc := application.NewUserStoryService(llmAPI, filePath)
+			existingCtx := cmd.Context()
+			ctx := context.WithValue(existingCtx, svcKey, svc)
+			cmd.SetContext(ctx)
+			return nil
+		},
 	}
 
-	llmAPIService := adapters.NewOpenAILLMService()
-	storyService := application.NewUserStoryService(llmAPIService, *filePath)
+	rootCmd.PersistentFlags().StringVarP(&filePath, "file", "f", "userstories.md", "Path to the markdown file containing user stories.")
 
-	args := flag.Args()
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: No command provided.")
-		printUsage()
+	rootCmd.AddCommand(categorizeCmd)
+	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(summarizeCmd)
+	rootCmd.AddCommand(generateCmd)
+
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
 
-	command := args[0]
-	switch command {
-	case "categorize":
-		if len(args) != 1 {
-			fmt.Fprintln(os.Stderr, "Error: 'categorize' command takes no arguments.")
-			printUsage()
-			os.Exit(1)
+var categorizeCmd = &cobra.Command{
+	Use:   "categorize",
+	Short: "Categorize all user stories in the file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return fmt.Errorf("'categorize' takes no arguments")
 		}
-		fmt.Printf("Starting categorization for stories in %s...\n", *filePath)
-		err := storyService.CategorizeAllStories()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error during categorization: %v\n", err)
-			os.Exit(1)
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Starting categorization for stories in %s...\n", file)
+		if err := svc.CategorizeAllStories(); err != nil {
+			return err
 		}
 		fmt.Println("Categorization process complete.")
+		return nil
+	},
+}
 
-	case "add":
-		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Error: 'add' command requires a user story description.")
-			fmt.Fprintln(os.Stderr, "Usage: ... add \"Your new user story\"")
-			printUsage()
-			os.Exit(1)
+var addCmd = &cobra.Command{
+	Use:   "add [story]",
+	Short: "Add a new user story to the file",
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		story := strings.Join(args, " ")
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Adding story to %s: \"%s\"\n", file, story)
+		return svc.AddUserStory(story)
+	},
+}
+
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all user stories from the file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return fmt.Errorf("'list' takes no arguments")
 		}
-		storyDescription := strings.Join(args[1:], " ")
-		fmt.Printf("Adding story to %s: \"%s\"\n", *filePath, storyDescription)
-		err := storyService.AddUserStory(storyDescription)
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Listing stories from %s...\n", file)
+		return svc.ListUserStories()
+	},
+}
+
+var summarizeCmd = &cobra.Command{
+	Use:   "summarize",
+	Short: "Generate and save a summary of all user stories",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return fmt.Errorf("'summarize' takes no arguments")
+		}
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Starting summarization for stories in %s...\n", file)
+		return svc.SummarizeStories()
+	},
+}
+
+var generateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "Generate new user stories based on existing ones",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		n, err := cmd.Flags().GetInt("num")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error adding user story: %v\n", err)
-			os.Exit(1)
+			return err
 		}
+		if n <= 0 {
+			return fmt.Errorf("number of stories must be positive")
+		}
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Starting generation of %d new stories for %s...\n", n, file)
+		return svc.GenerateNewStories(n)
+	},
+}
 
-	case "list":
-		if len(args) != 1 {
-			fmt.Fprintln(os.Stderr, "Error: 'list' command takes no arguments.")
-			printUsage()
-			os.Exit(1)
-		}
-		fmt.Printf("Listing stories from %s...\n", *filePath)
-		err := storyService.ListUserStories()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error listing user stories: %v\n", err)
-			os.Exit(1)
-		}
-
-	case "summarize":
-		if len(args) != 1 {
-			fmt.Fprintln(os.Stderr, "Error: 'summarize' command takes no arguments.")
-			printUsage()
-			os.Exit(1)
-		}
-		fmt.Printf("Starting summarization for stories in %s...\n", *filePath)
-		err := storyService.SummarizeStories()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error during summarization: %v\n", err)
-			os.Exit(1)
-		}
-
-	case "generate":
-		generateCmd := flag.NewFlagSet("generate", flag.ExitOnError)
-		numStories := generateCmd.Int("n", 1, "Number of user stories to generate")
-
-		generateCmd.Usage = func() {
-			fmt.Fprintf(os.Stderr, "Usage: %s -f <file> generate -n <number_of_stories>\n", os.Args[0])
-			fmt.Fprintln(os.Stderr, "\nFlags for generate:")
-			generateCmd.PrintDefaults()
-		}
-
-		if err := generateCmd.Parse(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing flags for 'generate' command: %v\n", err)
-			os.Exit(1)
-		}
-
-		if *numStories <= 0 {
-			fmt.Fprintln(os.Stderr, "Error: Number of stories to generate (-n) must be positive.")
-			generateCmd.Usage()
-			os.Exit(1)
-		}
-
-		if len(generateCmd.Args()) > 0 {
-			fmt.Fprintf(os.Stderr, "Error: 'generate' command received unexpected arguments: %v\n", generateCmd.Args())
-			generateCmd.Usage()
-			os.Exit(1)
-		}
-
-		fmt.Printf("Starting generation of %d new stories for %s...\n", *numStories, *filePath)
-		err := storyService.GenerateNewStories(*numStories)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error during story generation: %v\n", err)
-			os.Exit(1)
-		}
-
-	default:
-		fmt.Fprintf(os.Stderr, "Error: Unknown command '%s'\n", command)
-		printUsage()
-		os.Exit(1)
-	}
+func init() {
+	generateCmd.Flags().IntP("num", "n", 1, "Number of user stories to generate")
 }
