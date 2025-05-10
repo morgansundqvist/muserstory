@@ -432,7 +432,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 	llmInput := domain.LLMAdvancedInput{
 		SystemMessage:     fmt.Sprintf("Based on the provided context of existing user stories (if any), generate exactly %d new, distinct, and relevant user stories. Each story should be a single descriptive sentence, typically following a format like 'As a [user type], I want [action] so that [benefit]'.", numStoriesToGenerate),
 		UserMessage:       existingStoryDescriptions.String(),
-		ModelType:         domain.ModelTypeSimple, // Or consider a more advanced model if available/needed
+		ModelType:         domain.ModelTypeReasoningSimple, // Or consider a more advanced model if available/needed
 		SchemaName:        "GenerateNewUserStories",
 		Schema:            schemaDef,
 		SchemaDescription: "A list of newly generated user story descriptions.",
