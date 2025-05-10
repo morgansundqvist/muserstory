@@ -19,11 +19,13 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  add \"<story>\"     Add a new user story to the file. It will be automatically categorized.")
 	fmt.Fprintln(os.Stderr, "  list                List all user stories from the file.")
 	fmt.Fprintln(os.Stderr, "  summarize           Generate and save a summary of all user stories.")
+	fmt.Fprintln(os.Stderr, "  generate -n <num>   Generate <num> new user stories based on existing ones.")
 	fmt.Fprintln(os.Stderr, "\nExamples:")
 	fmt.Fprintf(os.Stderr, "  %s -f stories.md categorize\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s -f stories.md add \"As a user, I want to log in so that I can access my account.\"\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s -f stories.md list\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s -f stories.md summarize\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -f stories.md generate -n 5\n", os.Args[0])
 }
 
 func main() {
@@ -108,6 +110,45 @@ func main() {
 		err := storyService.SummarizeStories()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error during summarization: %v\n", err)
+			os.Exit(1)
+		}
+		// Success message is printed by the service method.
+
+	case "generate":
+		generateCmd := flag.NewFlagSet("generate", flag.ExitOnError)
+		numStories := generateCmd.Int("n", 1, "Number of user stories to generate")
+
+		// Custom usage for generate subcommand
+		generateCmd.Usage = func() {
+			fmt.Fprintf(os.Stderr, "Usage: %s -f <file> generate -n <number_of_stories>\n", os.Args[0])
+			fmt.Fprintln(os.Stderr, "\nFlags for generate:")
+			generateCmd.PrintDefaults()
+		}
+
+		// Parse flags for the generate command (args[0] is "generate")
+		if err := generateCmd.Parse(args[1:]); err != nil {
+			// Parse will exit on error due to flag.ExitOnError, but good practice
+			fmt.Fprintf(os.Stderr, "Error parsing flags for 'generate' command: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *numStories <= 0 {
+			fmt.Fprintln(os.Stderr, "Error: Number of stories to generate (-n) must be positive.")
+			generateCmd.Usage()
+			os.Exit(1)
+		}
+
+		// Check if there are any non-flag arguments remaining after parsing -n
+		if len(generateCmd.Args()) > 0 {
+			fmt.Fprintf(os.Stderr, "Error: 'generate' command received unexpected arguments: %v\n", generateCmd.Args())
+			generateCmd.Usage()
+			os.Exit(1)
+		}
+
+		fmt.Printf("Starting generation of %d new stories for %s...\n", *numStories, *filePath)
+		err := storyService.GenerateNewStories(*numStories)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error during story generation: %v\n", err)
 			os.Exit(1)
 		}
 		// Success message is printed by the service method.
