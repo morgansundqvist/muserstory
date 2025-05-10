@@ -1,0 +1,120 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/morgansundqvist/muserstory/internal/adapters"
+	"github.com/morgansundqvist/muserstory/internal/application"
+)
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "Usage: %s -f <markdown_file_path> <command> [arguments]\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "\nFlags:")
+	flag.PrintDefaults()
+	fmt.Fprintln(os.Stderr, "\nCommands:")
+	fmt.Fprintln(os.Stderr, "  categorize          Categorize all user stories in the file using an LLM service.")
+	fmt.Fprintln(os.Stderr, "  add \"<story>\"     Add a new user story to the file. It will be automatically categorized.")
+	fmt.Fprintln(os.Stderr, "  list                List all user stories from the file.")
+	fmt.Fprintln(os.Stderr, "  summarize           Generate and save a summary of all user stories.")
+	fmt.Fprintln(os.Stderr, "\nExamples:")
+	fmt.Fprintf(os.Stderr, "  %s -f stories.md categorize\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -f stories.md add \"As a user, I want to log in so that I can access my account.\"\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -f stories.md list\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -f stories.md summarize\n", os.Args[0])
+}
+
+func main() {
+	// Define the -f flag for the markdown file path.
+	// It's crucial this is parsed before accessing flag.Args().
+	filePath := flag.String("f", "userstories.md", "Path to the markdown file containing user stories.")
+	flag.Usage = printUsage // Set custom usage function
+	flag.Parse()            // Parse all flags
+
+	if *filePath == "" {
+		fmt.Fprintln(os.Stderr, "Error: Markdown file path (-f) must be provided.")
+		printUsage()
+		os.Exit(1)
+	}
+
+	// Initialize adapters and services.
+	// We use the mock OpenAILLMService here.
+	llmAPIService := adapters.NewOpenAILLMService()
+	storyService := application.NewUserStoryService(llmAPIService, *filePath)
+
+	// Get non-flag arguments (the command and its parameters).
+	args := flag.Args()
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: No command provided.")
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := args[0]
+	switch command {
+	case "categorize":
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Error: 'categorize' command takes no arguments.")
+			printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("Starting categorization for stories in %s...\n", *filePath)
+		err := storyService.CategorizeAllStories()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error during categorization: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Categorization process complete.")
+
+	case "add":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Error: 'add' command requires a user story description.")
+			fmt.Fprintln(os.Stderr, "Usage: ... add \"Your new user story\"")
+			printUsage()
+			os.Exit(1)
+		}
+		// The story description is all arguments after "add"
+		storyDescription := strings.Join(args[1:], " ")
+		fmt.Printf("Adding story to %s: \"%s\"\n", *filePath, storyDescription)
+		err := storyService.AddUserStory(storyDescription)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error adding user story: %v\n", err)
+			os.Exit(1)
+		}
+		// Success message is printed by the service method.
+
+	case "list":
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Error: 'list' command takes no arguments.")
+			printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("Listing stories from %s...\n", *filePath)
+		err := storyService.ListUserStories()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error listing user stories: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "summarize":
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Error: 'summarize' command takes no arguments.")
+			printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("Starting summarization for stories in %s...\n", *filePath)
+		err := storyService.SummarizeStories()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error during summarization: %v\n", err)
+			os.Exit(1)
+		}
+		// Success message is printed by the service method.
+
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Unknown command '%s'\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
