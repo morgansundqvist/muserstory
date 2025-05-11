@@ -46,6 +46,12 @@ test:
 	go test ./...
 	@echo "Tests complete."
 
+.PHONY: install
+install: build
+	@echo "Installing cli"
+	sudo mv bin/muserstory /usr/local/bin/
+	@echo "Installation complete."
+
 # Optional: Add a target for formatting Go code
 .PHONY: fmt
 fmt:
