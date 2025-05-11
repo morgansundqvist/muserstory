@@ -28,7 +28,8 @@ func main() {
 				return fmt.Errorf("missing required flag: --file")
 			}
 			llmAPI := adapters.NewOpenAILLMService()
-			svc := application.NewUserStoryService(llmAPI, filePath)
+			fileReader := adapters.NewLocalFileReader()
+			svc := application.NewUserStoryService(llmAPI, filePath, fileReader)
 			existingCtx := cmd.Context()
 			ctx := context.WithValue(existingCtx, svcKey, svc)
 			cmd.SetContext(ctx)

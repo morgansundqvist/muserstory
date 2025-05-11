@@ -18,12 +18,15 @@ import (
 type UserStoryService struct {
 	llmService ports.LLMService
 	filePath   string
+	fileReader ports.FileReader
 }
 
-func NewUserStoryService(llmService ports.LLMService, filePath string) *UserStoryService {
+func NewUserStoryService(
+	llmService ports.LLMService, filePath string, fileReader ports.FileReader) *UserStoryService {
 	return &UserStoryService{
 		llmService: llmService,
 		filePath:   filePath,
+		fileReader: fileReader,
 	}
 }
 
@@ -33,9 +36,13 @@ func generateID() string {
 }
 
 func (s *UserStoryService) ReadUserStoriesFromFile() (*domain.MarkdownFile, error) {
-	markdownFile, err := domain.ReadMarkdownFile(s.filePath)
+	content, err := s.fileReader.ReadFileContent(s.filePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading markdown file: %w", err)
+		return nil, fmt.Errorf("failed to read file content: %w", err)
+	}
+	markdownFile, err := domain.ParseMarkdownFileContent(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse markdown file content: %w", err)
 	}
 	return markdownFile, nil
 }

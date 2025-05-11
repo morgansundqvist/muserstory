@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,107 +92,7 @@ func ParseMarkdownFileContent(content string) (*MarkdownFile, error) {
 			}
 
 			stories = append(stories, UserStory{
-				ID:          fmt.Sprintf("story-%d", lineNumber),
-				Description: description,
-				Category:    category,
-			})
-		}
-	}
-
-	return &MarkdownFile{
-		Metadata: metadata,
-		Summary:  strings.TrimSpace(summaryBuilder.String()),
-		Stories:  stories,
-	}, nil
-}
-
-func ReadMarkdownFile(filePath string) (*MarkdownFile, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &MarkdownFile{Metadata: make(map[string]interface{}), Stories: []UserStory{}}, nil
-		}
-		return nil, fmt.Errorf("error opening file %s: %w", filePath, err)
-	}
-	defer file.Close()
-
-	var metadata map[string]interface{}
-	var summaryBuilder strings.Builder
-	var stories []UserStory
-	var storyContentLines []string
-
-	scanner := bufio.NewScanner(file)
-	isReadingSummary := false
-	isReadingMetadata := false
-	var metadataBuffer bytes.Buffer
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmedLine := strings.TrimSpace(line)
-		//remove leading "\t"
-		trimmedLine = strings.TrimLeft(trimmedLine, "\t")
-
-		if trimmedLine == "---" {
-			if !isReadingMetadata {
-				isReadingMetadata = true
-				continue
-			} else {
-				isReadingMetadata = false
-				if err := yaml.Unmarshal(metadataBuffer.Bytes(), &metadata); err != nil {
-					return nil, fmt.Errorf("error parsing YAML metadata: %w", err)
-				}
-				continue
-			}
-		}
-
-		if isReadingMetadata {
-			metadataBuffer.WriteString(line + "\n")
-			continue
-		}
-
-		if strings.HasPrefix(trimmedLine, "# Summary") {
-			isReadingSummary = true
-			continue
-		}
-
-		if isReadingSummary {
-			if strings.HasPrefix(trimmedLine, "- ") || strings.HasPrefix(trimmedLine, "**") {
-				isReadingSummary = false
-				storyContentLines = append(storyContentLines, line)
-			} else {
-				if summaryBuilder.Len() > 0 {
-					summaryBuilder.WriteString("\n")
-				}
-				summaryBuilder.WriteString(line)
-			}
-		} else {
-			storyContentLines = append(storyContentLines, line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file %s: %w", filePath, err)
-	}
-
-	lineNumber := 0
-	for _, line := range storyContentLines {
-		lineNumber++
-		trimmedLine := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmedLine, "- ") {
-			content := strings.TrimPrefix(trimmedLine, "- ")
-			description := content
-			category := "Uncategorized"
-
-			catStartIndex := strings.LastIndex(content, "[Category: ")
-			catEndIndex := strings.LastIndex(content, "]")
-
-			if catStartIndex != -1 && catEndIndex != -1 && catEndIndex > catStartIndex && catEndIndex == len(content)-1 {
-				description = strings.TrimSpace(content[:catStartIndex])
-				category = content[catStartIndex+len("[Category: ") : catEndIndex]
-			}
-
-			stories = append(stories, UserStory{
-				ID:          fmt.Sprintf("story-%d", lineNumber),
+				ID:          uuid.NewString(),
 				Description: description,
 				Category:    category,
 			})
