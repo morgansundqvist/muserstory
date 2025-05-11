@@ -83,16 +83,42 @@ func ParseMarkdownFileContent(content string) (*MarkdownFile, error) {
 			description := content
 			category := "Uncategorized"
 
+			// Parse [Category: ...] and [UUID: ...] tags
 			catStartIndex := strings.LastIndex(content, "[Category: ")
-			catEndIndex := strings.LastIndex(content, "]")
+			catEndIndex := -1
+			uuidStartIndex := strings.LastIndex(content, "[UUID: ")
+			uuidEndIndex := -1
 
-			if catStartIndex != -1 && catEndIndex != -1 && catEndIndex > catStartIndex && catEndIndex == len(content)-1 {
+			if catStartIndex != -1 {
+				catEndIndex = strings.Index(content[catStartIndex:], "]")
+				if catEndIndex != -1 {
+					catEndIndex += catStartIndex
+				}
+			}
+			if uuidStartIndex != -1 {
+				uuidEndIndex = strings.Index(content[uuidStartIndex:], "]")
+				if uuidEndIndex != -1 {
+					uuidEndIndex += uuidStartIndex
+				}
+			}
+
+			// Extract description, category, uuid
+			if catStartIndex != -1 && catEndIndex != -1 {
 				description = strings.TrimSpace(content[:catStartIndex])
-				category = content[catStartIndex+len("[Category: ") : catEndIndex]
+				category = strings.TrimSpace(content[catStartIndex+len("[Category: ") : catEndIndex])
+			}
+
+			storyUUID := ""
+			if uuidStartIndex != -1 && uuidEndIndex != -1 {
+				storyUUID = strings.TrimSpace(content[uuidStartIndex+len("[UUID: ") : uuidEndIndex])
+			}
+
+			if storyUUID == "" {
+				storyUUID = uuid.NewString()
 			}
 
 			stories = append(stories, UserStory{
-				ID:          uuid.NewString(),
+				ID:          storyUUID,
 				Description: description,
 				Category:    category,
 			})
@@ -160,7 +186,7 @@ func (m *MarkdownFile) WriteToFile(filePath string) error {
 				return fmt.Errorf("error writing category header: %w", err)
 			}
 			for _, story := range storiesByCategory[category] {
-				line := fmt.Sprintf("- %s [Category: %s]\n", story.Description, story.Category)
+				line := fmt.Sprintf("- %s [Category: %s] [UUID: %s]\n", story.Description, story.Category, story.ID)
 				if _, err := writer.WriteString(line); err != nil {
 					return fmt.Errorf("error writing story: %w", err)
 				}

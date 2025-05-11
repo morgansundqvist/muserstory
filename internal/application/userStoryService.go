@@ -268,7 +268,7 @@ func (s *UserStoryService) ListUserStories() error {
 	for i, category := range categories {
 		fmt.Printf("Category: %s\n", category)
 		for _, story := range categoryMap[category] {
-			fmt.Printf("- %s\n", story.Description)
+			fmt.Printf("- %s [UUID: %s]\n", story.Description, story.ID)
 		}
 		if i < len(categories)-1 {
 			fmt.Println()
