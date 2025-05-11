@@ -15,6 +15,45 @@ import (
 	"github.com/morgansundqvist/muserstory/internal/ports"
 )
 
+// GetProjectRemote fetches a project by ID from the remote API and prints its user stories.
+func (s *UserStoryService) GetProjectRemote(id string) error {
+	if id == "" {
+		return fmt.Errorf("project id must be provided with --id flag")
+	}
+	apiHost := os.Getenv("API_HOST")
+	if apiHost == "" {
+		apiHost = "http://localhost:3000"
+	}
+	url := strings.TrimRight(apiHost, "/") + "/api/projects/" + id
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to GET project: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("failed to fetch project, status: %s", resp.Status)
+	}
+
+	var project domain.Project
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&project); err != nil {
+		return fmt.Errorf("failed to decode project response: %w", err)
+	}
+
+	fmt.Printf("Project: %s (UUID: %s)\n", project.Name, project.ID)
+	if len(project.UserStories) == 0 {
+		fmt.Println("No user stories found for this project.")
+		return nil
+	}
+	fmt.Println("User Stories:")
+	for _, story := range project.UserStories {
+		fmt.Printf("- %s [Category: %s]\n", story.Description, story.Category)
+	}
+	return nil
+}
+
 type UserStoryService struct {
 	llmService ports.LLMService
 	filePath   string
@@ -45,15 +84,6 @@ func (s *UserStoryService) ReadUserStoriesFromFile() (*domain.MarkdownFile, erro
 		return nil, fmt.Errorf("failed to parse markdown file content: %w", err)
 	}
 	return markdownFile, nil
-}
-
-func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []domain.UserStory) error {
-	markdownFile := &domain.MarkdownFile{
-		Metadata: make(map[string]interface{}), // Add metadata handling if needed
-		Summary:  summary,
-		Stories:  stories,
-	}
-	return markdownFile.WriteToFile(s.filePath)
 }
 
 func (s *UserStoryService) AddUserStory(description string) error {
@@ -163,10 +193,6 @@ func (s *UserStoryService) SummarizeStories() error {
 
 	if len(markdownFile.Stories) == 0 {
 		fmt.Println("No stories to summarize.")
-		err = s.WriteUserStoriesToFile("", []domain.UserStory{})
-		if err != nil {
-			return fmt.Errorf("could not clear file when no stories to summarize: %w", err)
-		}
 		return nil
 	}
 
@@ -356,7 +382,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 
 	markdownFile.Stories = allStories
 
-	err = s.WriteUserStoriesToFile(markdownFile.Summary, allStories)
+	err = markdownFile.WriteToFile(s.filePath)
 	if err != nil {
 		return fmt.Errorf("could not write new stories to file: %w", err)
 	}
@@ -483,5 +509,41 @@ func (s *UserStoryService) PushProject() error {
 	}
 
 	fmt.Printf("Project pushed and metadata updated in %s\n", s.filePath)
+	return nil
+}
+
+// ListProjectsRemote fetches all projects from the remote API and prints their name and UUID.
+func (s *UserStoryService) ListProjectsRemote() error {
+	apiHost := os.Getenv("API_HOST")
+	if apiHost == "" {
+		apiHost = "http://localhost:3000"
+	}
+	url := strings.TrimRight(apiHost, "/") + "/api/projects"
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to GET projects: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("failed to fetch projects, status: %s", resp.Status)
+	}
+
+	var projects []domain.Project
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&projects); err != nil {
+		return fmt.Errorf("failed to decode projects response: %w", err)
+	}
+
+	if len(projects) == 0 {
+		fmt.Println("No remote projects found.")
+		return nil
+	}
+
+	fmt.Println("Remote Projects:")
+	for _, project := range projects {
+		fmt.Printf("- %s (UUID: %s)\n", project.Name, project.ID)
+	}
 	return nil
 }

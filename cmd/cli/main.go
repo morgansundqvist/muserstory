@@ -46,6 +46,10 @@ func main() {
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(pushCmd)
 
+	rootCmd.AddCommand(listRemoteCmd)
+
+	rootCmd.AddCommand(getRemoteCmd)
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -139,6 +143,40 @@ var pushCmd = &cobra.Command{
 	},
 }
 
+var listRemoteCmd = &cobra.Command{
+	Use:   "listremote",
+	Short: "List all projects from the remote server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return fmt.Errorf("'listremote' takes no arguments")
+		}
+		// We do not need the file flag or file context for this command
+		llmAPI := adapters.NewOpenAILLMService()
+		fileReader := adapters.NewLocalFileReader()
+		svc := application.NewUserStoryService(llmAPI, "", fileReader)
+		return svc.ListProjectsRemote()
+	},
+}
+
+var getRemoteCmd = &cobra.Command{
+	Use:   "getremote",
+	Short: "Get a project by ID from the remote server and list its user stories",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := cmd.Flags().GetString("id")
+		if err != nil {
+			return err
+		}
+		if id == "" {
+			return fmt.Errorf("--id flag is required")
+		}
+		llmAPI := adapters.NewOpenAILLMService()
+		fileReader := adapters.NewLocalFileReader()
+		svc := application.NewUserStoryService(llmAPI, "", fileReader)
+		return svc.GetProjectRemote(id)
+	},
+}
+
 func init() {
 	generateCmd.Flags().IntP("num", "n", 1, "Number of user stories to generate")
+	getRemoteCmd.Flags().String("id", "", "Project UUID to fetch from remote")
 }
