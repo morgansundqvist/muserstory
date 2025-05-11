@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort" 
+	"sort"
 	"strings"
 
 	"github.com/morgansundqvist/muserstory/internal/domain"
@@ -27,7 +27,7 @@ func NewUserStoryService(llmService ports.LLMService, filePath string) *UserStor
 }
 
 func generateID() string {
-	bytes := make([]byte, 8) 
+	bytes := make([]byte, 8)
 	if _, err := rand.Read(bytes); err != nil {
 		return fmt.Sprintf("errID-%d", os.Getpid())
 	}
@@ -35,151 +35,20 @@ func generateID() string {
 }
 
 func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory, error) {
-	file, err := os.Open(s.filePath)
+	markdownFile, err := domain.ReadMarkdownFile(s.filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", []domain.UserStory{}, nil 
-		}
-		return "", nil, fmt.Errorf("error opening file %s: %w", s.filePath, err)
+		return "", nil, fmt.Errorf("error reading markdown file: %w", err)
 	}
-	defer file.Close()
-
-	var stories []domain.UserStory
-	var summaryBuilder strings.Builder
-	var storyContentLines []string 
-
-	scanner := bufio.NewScanner(file)
-
-	var allFileLines []string
-	for scanner.Scan() {
-		allFileLines = append(allFileLines, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return "", nil, fmt.Errorf("error reading all lines from file %s: %w", s.filePath, err)
-	}
-
-	isReadingSummary := false
-	currentLineIndex := 0
-
-	if len(allFileLines) > 0 && strings.TrimSpace(allFileLines[0]) == "# Summary" {
-		isReadingSummary = true
-		currentLineIndex = 1 
-	}
-
-	for ; currentLineIndex < len(allFileLines); currentLineIndex++ {
-		line := allFileLines[currentLineIndex]
-		trimmedLine := strings.TrimSpace(line)
-
-		if isReadingSummary {
-			if strings.HasPrefix(trimmedLine, "- ") || strings.HasPrefix(trimmedLine, "**") {
-				isReadingSummary = false                            
-				storyContentLines = append(storyContentLines, line) 
-			} else {
-				if summaryBuilder.Len() > 0 {
-					summaryBuilder.WriteString("\n") 
-				}
-				summaryBuilder.WriteString(line)
-			}
-		} else {
-			storyContentLines = append(storyContentLines, line)
-		}
-	}
-
-	lineNumber := 0 
-	for _, line := range storyContentLines {
-		lineNumber++
-		trimmedLine := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmedLine, "- ") {
-			content := strings.TrimPrefix(trimmedLine, "- ")
-			description := content
-			category := "Uncategorized" 
-
-			catStartIndex := strings.LastIndex(content, "[Category: ")
-			catEndIndex := strings.LastIndex(content, "]")
-
-			if catStartIndex != -1 && catEndIndex != -1 && catEndIndex > catStartIndex && catEndIndex == len(content)-1 {
-				description = strings.TrimSpace(content[:catStartIndex])
-				category = content[catStartIndex+len("[Category: ") : catEndIndex]
-			}
-
-			stories = append(stories, domain.UserStory{
-				ID:          fmt.Sprintf("%s-%d", generateID(), lineNumber), 
-				Description: description,
-				Category:    category,
-			})
-		}
-	}
-
-	finalSummary := strings.TrimSpace(summaryBuilder.String())
-	return finalSummary, stories, nil
+	return markdownFile.Summary, markdownFile.Stories, nil
 }
 
 func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []domain.UserStory) error {
-	file, err := os.OpenFile(s.filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("error opening/creating file %s for writing: %w", s.filePath, err)
+	markdownFile := &domain.MarkdownFile{
+		Metadata: make(map[string]interface{}), // Add metadata handling if needed
+		Summary:  summary,
+		Stories:  stories,
 	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-
-	if summary != "" {
-		if _, err := writer.WriteString("# Summary\n"); err != nil {
-			return fmt.Errorf("error writing summary header: %w", err)
-		}
-		summaryToWrite := strings.TrimSpace(summary)
-		if summaryToWrite != "" {
-			if _, err := writer.WriteString(summaryToWrite + "\n"); err != nil {
-				return fmt.Errorf("error writing summary content: %w", err)
-			}
-		}
-		if _, err := writer.WriteString("\n"); err != nil { 
-			return fmt.Errorf("error writing newline after summary section: %w", err)
-		}
-	}
-
-	if len(stories) == 0 {
-		return writer.Flush()
-	}
-
-	storiesByCategory := make(map[string][]domain.UserStory)
-	var categoryOrder []string
-
-	for _, story := range stories {
-		catToUse := story.Category
-		if catToUse == "" {
-			catToUse = "Uncategorized"
-		}
-		if _, exists := storiesByCategory[catToUse]; !exists {
-			categoryOrder = append(categoryOrder, catToUse) 
-		}
-		storiesByCategory[catToUse] = append(storiesByCategory[catToUse], story)
-	}
-
-	sort.Strings(categoryOrder)
-
-	for _, categoryName := range categoryOrder {
-		if _, err := writer.WriteString(fmt.Sprintf("**%s**\n", categoryName)); err != nil {
-			return fmt.Errorf("error writing category header %s: %w", categoryName, err)
-		}
-
-		categoryStories := storiesByCategory[categoryName]
-		for _, story := range categoryStories {
-			catToPrintInTag := story.Category
-			if catToPrintInTag == "" {
-				catToPrintInTag = "Uncategorized"
-			}
-			line := fmt.Sprintf("- %s [Category: %s]\n", story.Description, catToPrintInTag)
-			if _, err := writer.WriteString(line); err != nil {
-				return fmt.Errorf("error writing story (ID: %s) to file: %w", story.ID, err)
-			}
-		}
-		if _, err := writer.WriteString("\n"); err != nil { 
-			return fmt.Errorf("error writing newline separator: %w", err)
-		}
-	}
-
-	return writer.Flush()
+	return markdownFile.WriteToFile(s.filePath)
 }
 
 func (s *UserStoryService) AddUserStory(description string) error {
@@ -191,7 +60,7 @@ func (s *UserStoryService) AddUserStory(description string) error {
 	newStory := domain.UserStory{
 		ID:          generateID(),
 		Description: description,
-		Category:    "Uncategorized", 
+		Category:    "Uncategorized",
 	}
 
 	llmInput := domain.LLMSimpleInput{
@@ -207,7 +76,7 @@ func (s *UserStoryService) AddUserStory(description string) error {
 	}
 	category = strings.TrimSpace(category)
 	if category == "" {
-		category = "Uncategorized" 
+		category = "Uncategorized"
 	}
 
 	newStory.Category = category
@@ -257,7 +126,7 @@ func (s *UserStoryService) CategorizeAllStories() error {
 		}
 		category = strings.TrimSpace(category)
 		if category == "" {
-			category = "Uncategorized" 
+			category = "Uncategorized"
 		}
 		categorizedStories[i] = story
 		categorizedStories[i].Category = category
@@ -267,8 +136,7 @@ func (s *UserStoryService) CategorizeAllStories() error {
 		return categorizedStories[i].Category < categorizedStories[j].Category
 	})
 
-
-	err = s.WriteUserStoriesToFile(currentSummary, categorizedStories) 
+	err = s.WriteUserStoriesToFile(currentSummary, categorizedStories)
 	if err != nil {
 		return fmt.Errorf("could not write categorized stories to file: %w", err)
 	}
@@ -347,11 +215,11 @@ func (s *UserStoryService) ListUserStories() error {
 	if summary != "" {
 		fmt.Println("# Summary")
 		fmt.Println(summary)
-		fmt.Println() 
+		fmt.Println()
 	}
 
 	if len(stories) == 0 {
-		if summary == "" { 
+		if summary == "" {
 			fmt.Println("No user stories found in the file.")
 		} else {
 			fmt.Println("No user stories found in the file (summary is present).")
@@ -391,7 +259,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 	llmInput := domain.LLMAdvancedInput{
 		SystemMessage:     fmt.Sprintf("Based on the provided context of existing user stories (if any), generate exactly %d new, distinct, and relevant user stories. Each story should be a single descriptive sentence, typically following a format like 'As a [user type], I want [action] so that [benefit]'.", numStoriesToGenerate),
 		UserMessage:       existingStoryDescriptions.String(),
-		ModelType:         domain.ModelTypeReasoningSimple, 
+		ModelType:         domain.ModelTypeReasoningSimple,
 		SchemaName:        "GenerateNewUserStories",
 		Schema:            schemaDef,
 		SchemaDescription: "A list of newly generated user story descriptions.",
@@ -439,7 +307,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 		newStory := domain.UserStory{
 			ID:          generateID(),
 			Description: trimmedStoryDesc,
-			Category:    "Uncategorized", 
+			Category:    "Uncategorized",
 		}
 
 		categorizationInput := domain.LLMSimpleInput{
