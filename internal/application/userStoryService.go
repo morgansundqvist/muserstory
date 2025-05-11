@@ -210,12 +210,6 @@ func (s *UserStoryService) ListUserStories() error {
 		return fmt.Errorf("could not read stories for listing: %w", err)
 	}
 
-	if markdownFile.Summary != "" {
-		fmt.Println("# Summary")
-		fmt.Println(markdownFile.Summary)
-		fmt.Println()
-	}
-
 	if len(markdownFile.Stories) == 0 {
 		if markdownFile.Summary == "" {
 			fmt.Println("No user stories found in the file.")
@@ -225,9 +219,29 @@ func (s *UserStoryService) ListUserStories() error {
 		return nil
 	}
 
-	fmt.Println("User Stories:")
+	// Group stories by category
+	categoryMap := make(map[string][]domain.UserStory)
+	var categories []string
 	for _, story := range markdownFile.Stories {
-		fmt.Printf("- %s [Category: %s]\n", story.Description, story.Category)
+		category := story.Category
+		if _, exists := categoryMap[category]; !exists {
+			categories = append(categories, category)
+		}
+		categoryMap[category] = append(categoryMap[category], story)
+	}
+
+	// Sort categories alphabetically for consistent output
+	sort.Strings(categories)
+
+	fmt.Println("User Stories:")
+	for i, category := range categories {
+		fmt.Printf("Category: %s\n", category)
+		for _, story := range categoryMap[category] {
+			fmt.Printf("- %s\n", story.Description)
+		}
+		if i < len(categories)-1 {
+			fmt.Println()
+		}
 	}
 	return nil
 }
