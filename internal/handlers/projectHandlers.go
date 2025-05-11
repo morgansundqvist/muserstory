@@ -22,7 +22,12 @@ func (h *ProjectHandler) CreateProject(c *fiber.Ctx) error {
 			"details": err.Error(),
 		})
 	}
+	// Ensure UserStories is always initialized as an empty slice if not provided
+	if project.UserStories == nil {
+		project.UserStories = make([]domain.UserStory, 0)
+	}
 	if project.ID == "" {
+		// Optionally, generate an ID here if needed
 	}
 	if err := h.Repo.StoreProject(*project); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
