@@ -43,6 +43,7 @@ func main() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(summarizeCmd)
 	rootCmd.AddCommand(generateCmd)
+	rootCmd.AddCommand(pushCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -123,6 +124,17 @@ var generateCmd = &cobra.Command{
 		file := cmd.Flag("file").Value.String()
 		fmt.Printf("Starting generation of %d new stories for %s...\n", n, file)
 		return svc.GenerateNewStories(n)
+	},
+}
+
+var pushCmd = &cobra.Command{
+	Use:   "push",
+	Short: "Push the current markdown file as a project to the remote server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		svc := cmd.Context().Value(svcKey).(*application.UserStoryService)
+		file := cmd.Flag("file").Value.String()
+		fmt.Printf("Pushing project from %s...\n", file)
+		return svc.PushProject()
 	},
 }
 

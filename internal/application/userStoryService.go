@@ -2,14 +2,15 @@ package application
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/morgansundqvist/muserstory/internal/domain"
 	"github.com/morgansundqvist/muserstory/internal/ports"
 )
@@ -27,11 +28,8 @@ func NewUserStoryService(llmService ports.LLMService, filePath string) *UserStor
 }
 
 func generateID() string {
-	bytes := make([]byte, 8)
-	if _, err := rand.Read(bytes); err != nil {
-		return fmt.Sprintf("errID-%d", os.Getpid())
-	}
-	return hex.EncodeToString(bytes)
+	uuidID := uuid.NewString()
+	return uuidID
 }
 
 func (s *UserStoryService) ReadUserStoriesFromFile() (*domain.MarkdownFile, error) {
@@ -401,4 +399,82 @@ func (s *UserStoryService) GeneratePossibleCategories(stories []domain.UserStory
 	categories = categoriesResponseStruct.Categories
 
 	return categories
+}
+
+func (s *UserStoryService) PushProject() error {
+	markdownFile, err := s.ReadUserStoriesFromFile()
+	if err != nil {
+		return fmt.Errorf("could not read markdown file: %w", err)
+	}
+
+	// Ensure metadata map exists
+	if markdownFile.Metadata == nil {
+		markdownFile.Metadata = make(map[string]interface{})
+	}
+
+	projectID, _ := markdownFile.Metadata["project_id"].(string)
+	projectName, _ := markdownFile.Metadata["project_name"].(string)
+
+	// Prompt for project name and generate ID if missing
+	if projectID == "" {
+		if projectName == "" {
+			fmt.Print("Enter project name: ")
+			reader := bufio.NewReader(os.Stdin)
+			nameInput, _ := reader.ReadString('\n')
+			projectName = strings.TrimSpace(nameInput)
+			if projectName == "" {
+				return fmt.Errorf("project name cannot be empty")
+			}
+		}
+		projectID = generateID()
+	}
+
+	// Build Project entity
+	project := domain.Project{
+		ID:          projectID,
+		Name:        projectName,
+		Summary:     markdownFile.Summary,
+		UserStories: markdownFile.Stories,
+	}
+
+	// Build API URL
+	apiHost := os.Getenv("API_HOST")
+	if apiHost == "" {
+		apiHost = "http://localhost:3000"
+	}
+	apiPath := "/api/projects"
+	url := strings.TrimRight(apiHost, "/") + apiPath
+
+	// Marshal project to JSON
+	body, err := json.Marshal(project)
+	if err != nil {
+		return fmt.Errorf("failed to marshal project: %w", err)
+	}
+
+	// HTTP POST
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to POST project: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("failed to push project to remote, status: %s", resp.Status)
+	}
+
+	// Write project_id and project_name to metadata and save
+	markdownFile.Metadata["project_id"] = projectID
+	markdownFile.Metadata["project_name"] = projectName
+	if err := markdownFile.WriteToFile(s.filePath); err != nil {
+		return fmt.Errorf("could not update markdown file with project metadata: %w", err)
+	}
+
+	fmt.Printf("Project pushed and metadata updated in %s\n", s.filePath)
+	return nil
 }
