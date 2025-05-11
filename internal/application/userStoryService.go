@@ -34,12 +34,12 @@ func generateID() string {
 	return hex.EncodeToString(bytes)
 }
 
-func (s *UserStoryService) ReadUserStoriesFromFile() (string, []domain.UserStory, error) {
+func (s *UserStoryService) ReadUserStoriesFromFile() (*domain.MarkdownFile, error) {
 	markdownFile, err := domain.ReadMarkdownFile(s.filePath)
 	if err != nil {
-		return "", nil, fmt.Errorf("error reading markdown file: %w", err)
+		return nil, fmt.Errorf("error reading markdown file: %w", err)
 	}
-	return markdownFile.Summary, markdownFile.Stories, nil
+	return markdownFile, nil
 }
 
 func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []domain.UserStory) error {
@@ -52,7 +52,7 @@ func (s *UserStoryService) WriteUserStoriesToFile(summary string, stories []doma
 }
 
 func (s *UserStoryService) AddUserStory(description string) error {
-	currentSummary, stories, err := s.ReadUserStoriesFromFile()
+	markdownFile, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read existing stories: %w", err)
 	}
@@ -81,37 +81,32 @@ func (s *UserStoryService) AddUserStory(description string) error {
 
 	newStory.Category = category
 
-	stories = append(stories, newStory)
+	markdownFile.Stories = append(markdownFile.Stories, newStory)
 
-	err = s.WriteUserStoriesToFile(currentSummary, stories)
+	err = markdownFile.WriteToFile(s.filePath)
 	if err != nil {
-		return fmt.Errorf("could not write updated stories to file: %w", err)
+		return fmt.Errorf("could not write new story to file: %w", err)
 	}
 	fmt.Printf("User story added: \"%s\" [Category: %s]\n", newStory.Description, newStory.Category)
 	return nil
 }
 
 func (s *UserStoryService) CategorizeAllStories() error {
-	currentSummary, stories, err := s.ReadUserStoriesFromFile()
+	markdownFile, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read stories for categorization: %w", err)
 	}
 
-	if len(stories) == 0 {
-		fmt.Println("No stories found in the file to categorize.")
-		err = s.WriteUserStoriesToFile(currentSummary, []domain.UserStory{})
-		if err != nil {
-			return fmt.Errorf("could not write file with current summary and no stories: %w", err)
-		}
+	if len(markdownFile.Stories) == 0 {
 		return nil
 	}
 
-	possibleCategories := s.GeneratePossibleCategories(stories)
+	possibleCategories := s.GeneratePossibleCategories(markdownFile.Stories)
 
 	possibleCategoriesString := strings.Join(possibleCategories, ", ")
 
-	categorizedStories := make([]domain.UserStory, len(stories))
-	for i, story := range stories {
+	categorizedStories := make([]domain.UserStory, len(markdownFile.Stories))
+	for i, story := range markdownFile.Stories {
 		llmInput := domain.LLMSimpleInput{
 			SystemMessage: "Categorize the following user story. Only return the category name. Possible categories are: " + possibleCategoriesString,
 			UserMessage:   story.Description,
@@ -136,7 +131,9 @@ func (s *UserStoryService) CategorizeAllStories() error {
 		return categorizedStories[i].Category < categorizedStories[j].Category
 	})
 
-	err = s.WriteUserStoriesToFile(currentSummary, categorizedStories)
+	markdownFile.Stories = categorizedStories
+
+	err = markdownFile.WriteToFile(s.filePath)
 	if err != nil {
 		return fmt.Errorf("could not write categorized stories to file: %w", err)
 	}
@@ -154,12 +151,12 @@ func (s *UserStoryService) CategorizeAllStories() error {
 }
 
 func (s *UserStoryService) SummarizeStories() error {
-	_, stories, err := s.ReadUserStoriesFromFile()
+	markdownFile, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read stories for summarization: %w", err)
 	}
 
-	if len(stories) == 0 {
+	if len(markdownFile.Stories) == 0 {
 		fmt.Println("No stories to summarize.")
 		err = s.WriteUserStoriesToFile("", []domain.UserStory{})
 		if err != nil {
@@ -169,9 +166,9 @@ func (s *UserStoryService) SummarizeStories() error {
 	}
 
 	var storyDescriptions strings.Builder
-	for i, story := range stories {
+	for i, story := range markdownFile.Stories {
 		storyDescriptions.WriteString(story.Description)
-		if i < len(stories)-1 {
+		if i < len(markdownFile.Stories)-1 {
 			storyDescriptions.WriteString("\n\n")
 		}
 	}
@@ -197,7 +194,8 @@ func (s *UserStoryService) SummarizeStories() error {
 		fmt.Println("\nSummary has been generated.")
 	}
 
-	err = s.WriteUserStoriesToFile(generatedSummary, stories)
+	markdownFile.Summary = generatedSummary
+	err = markdownFile.WriteToFile(s.filePath)
 	if err != nil {
 		return fmt.Errorf("could not write new summary and stories to file: %w", err)
 	}
@@ -207,19 +205,19 @@ func (s *UserStoryService) SummarizeStories() error {
 }
 
 func (s *UserStoryService) ListUserStories() error {
-	summary, stories, err := s.ReadUserStoriesFromFile()
+	markdownFile, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read stories for listing: %w", err)
 	}
 
-	if summary != "" {
+	if markdownFile.Summary != "" {
 		fmt.Println("# Summary")
-		fmt.Println(summary)
+		fmt.Println(markdownFile.Summary)
 		fmt.Println()
 	}
 
-	if len(stories) == 0 {
-		if summary == "" {
+	if len(markdownFile.Stories) == 0 {
+		if markdownFile.Summary == "" {
 			fmt.Println("No user stories found in the file.")
 		} else {
 			fmt.Println("No user stories found in the file (summary is present).")
@@ -228,7 +226,7 @@ func (s *UserStoryService) ListUserStories() error {
 	}
 
 	fmt.Println("User Stories:")
-	for _, story := range stories {
+	for _, story := range markdownFile.Stories {
 		fmt.Printf("- %s [Category: %s]\n", story.Description, story.Category)
 	}
 	return nil
@@ -239,15 +237,15 @@ type GeneratedStoriesResponse struct {
 }
 
 func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
-	currentSummary, existingStories, err := s.ReadUserStoriesFromFile()
+	markdownFile, err := s.ReadUserStoriesFromFile()
 	if err != nil {
 		return fmt.Errorf("could not read existing stories: %w", err)
 	}
 
 	var existingStoryDescriptions strings.Builder
-	if len(existingStories) > 0 {
+	if len(markdownFile.Stories) > 0 {
 		existingStoryDescriptions.WriteString("Existing user stories for context:\n")
-		for _, story := range existingStories {
+		for _, story := range markdownFile.Stories {
 			existingStoryDescriptions.WriteString(fmt.Sprintf("- %s\n", story.Description))
 		}
 	} else {
@@ -282,7 +280,7 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 
 	fmt.Printf("LLM generated %d potential new story descriptions. Reviewing each one...\n", len(generatedStoriesResponse.NewUserStories))
 
-	allStories := existingStories
+	allStories := markdownFile.Stories
 	newlyAddedStoriesCount := 0
 	reader := bufio.NewReader(os.Stdin)
 
@@ -337,9 +335,11 @@ func (s *UserStoryService) GenerateNewStories(numStoriesToGenerate int) error {
 		return nil
 	}
 
-	err = s.WriteUserStoriesToFile(currentSummary, allStories)
+	markdownFile.Stories = allStories
+
+	err = s.WriteUserStoriesToFile(markdownFile.Summary, allStories)
 	if err != nil {
-		return fmt.Errorf("could not write updated stories to file: %w", err)
+		return fmt.Errorf("could not write new stories to file: %w", err)
 	}
 
 	fmt.Printf("%d new user stories have been generated, categorized, and added to %s.\n", newlyAddedStoriesCount, s.filePath)
